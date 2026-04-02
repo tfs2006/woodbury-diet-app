@@ -69,13 +69,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-    const result = await pool.query('SELECT COUNT(*) as count FROM users');
-    return NextResponse.json({ hasUsers: parseInt(result.rows[0].count) > 0 });
-  } catch (error: any) {
-    console.error('Setup GET error:', error?.message || error);
-    return NextResponse.json(
-      { error: error?.message || 'Database connection failed' },
-      { status: 500 }
-    );
-  }
 }
