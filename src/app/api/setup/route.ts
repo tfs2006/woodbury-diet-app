@@ -48,16 +48,34 @@ export async function POST(request: NextRequest) {
       { success: true, message: 'Account created successfully' },
       { status: 201 }
     );
-  } catch (error) {
-    console.error('Setup error:', error);
+  } catch (error: any) {
+    console.error('Setup error:', error?.message || error);
+    const errorMessage = error?.message || 'Failed to create account';
     return NextResponse.json(
-      { error: 'Failed to create account' },
+      { error: errorMessage },
       { status: 500 }
     );
   }
 }
 
 export async function GET() {
-  const result = await pool.query('SELECT COUNT(*) as count FROM users');
-  return NextResponse.json({ hasUsers: parseInt(result.rows[0].count) > 0 });
+  try {
+    const result = await pool.query('SELECT COUNT(*) as count FROM users');
+    return NextResponse.json({ hasUsers: parseInt(result.rows[0].count) > 0 });
+  } catch (error: any) {
+    console.error('Setup GET error:', error?.message || error);
+    return NextResponse.json(
+      { error: error?.message || 'Database connection failed' },
+      { status: 500 }
+    );
+  }
+    const result = await pool.query('SELECT COUNT(*) as count FROM users');
+    return NextResponse.json({ hasUsers: parseInt(result.rows[0].count) > 0 });
+  } catch (error: any) {
+    console.error('Setup GET error:', error?.message || error);
+    return NextResponse.json(
+      { error: error?.message || 'Database connection failed' },
+      { status: 500 }
+    );
+  }
 }
