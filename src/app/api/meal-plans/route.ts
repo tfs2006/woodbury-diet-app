@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/route';
 import OpenAI from 'openai';
-import db from '@/lib/db';
+import pool from '@/lib/db';
 
 const openai = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
@@ -110,14 +110,9 @@ Please respond with ONLY valid JSON in this exact format:
     }
 
     // Save meal plan to database
-    db.prepare(`
-      INSERT INTO meal_plans (user_id, week_start_date, plan_data, budget)
-      VALUES (?, ?, ?, ?)
-    `).run(
-      session.user.id,
-      weekStartDate || new Date().toISOString(),
-      JSON.stringify(parsedResponse),
-      budget || 120
+    await pool.query(
+      `INSERT INTO meal_plans (user_id, week_start_date, plan_data, budget) VALUES ($1, $2, $3, $4)`,
+      [session.user.id, weekStartDate || new Date().toISOString(), JSON.stringify(parsedResponse), budget || 120]
     );
 
     return NextResponse.json(parsedResponse);

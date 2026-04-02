@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/route';
-import db from '@/lib/db';
+import pool from '@/lib/db';
 
 // Pre-loaded average prices for Salt Lake City area (grocery store averages)
 const DEFAULT_PRICES: Record<string, { price: number; unit: string; stores: string[] }> = {
@@ -99,14 +99,16 @@ export async function POST(request: NextRequest) {
           const price = Math.round(match.price * multiplier * variation * 100) / 100;
 
           // Check if price already exists for this item+store
-          const existing = db.prepare(
-            'SELECT id FROM grocery_prices WHERE user_id = ? AND item_name = ? AND store_name = ?'
-          ).get(session.user.id, itemName, store);
+          const existing = await pool.query(
+            'SELECT id FROM grocery_prices WHERE user_id = $1 AND item_name = $2 AND store_name = $3',
+            [session.user.id, itemName, store]
+          );
 
-          if (!existing) {
-            db.prepare(
-              'INSERT INTO grocery_prices (user_id, store_name, item_name, price, unit) VALUES (?, ?, ?, ?, ?)'
-            ).run(session.user.id, store, itemName, price, match.unit);
+          if (existing.rows.length === 0) {
+            await pool.query(
+              'INSERT INTO grocery_prices (user_id, store_name, item_name, price, unit) VALUES ($1, $2, $3, $4, $5)',
+              [session.user.id, store, itemName, price, match.unit]
+            );
             added.push({ item: itemName, store, price, unit: match.unit });
           }
         }

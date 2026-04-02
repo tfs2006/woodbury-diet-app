@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]/route';
-import db from '@/lib/db';
+import pool from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,22 +13,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const item = searchParams.get('item');
 
-    let prices;
+    let result;
     if (item) {
-      prices = db.prepare(`
-        SELECT * FROM grocery_prices 
-        WHERE user_id = ? AND item_name LIKE ?
-        ORDER BY price ASC
-      `).all(session.user.id, `%${item}%`);
+      result = await pool.query(
+        `SELECT * FROM grocery_prices WHERE user_id = $1 AND item_name ILIKE $2 ORDER BY price ASC`,
+        [session.user.id, `%${item}%`]
+      );
     } else {
-      prices = db.prepare(`
-        SELECT * FROM grocery_prices 
-        WHERE user_id = ?
-        ORDER BY item_name, price ASC
-      `).all(session.user.id);
+      result = await pool.query(
+        `SELECT * FROM grocery_prices WHERE user_id = $1 ORDER BY item_name, price ASC`,
+        [session.user.id]
+      );
     }
 
-    return NextResponse.json({ prices });
+    return NextResponse.json({ prices: result.rows });
   } catch (error) {
     console.error('Get prices error:', error);
     return NextResponse.json({ error: 'Failed to fetch prices' }, { status: 500 });
@@ -52,15 +50,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = db.prepare(`
-      INSERT INTO grocery_prices (user_id, store_name, item_name, price, unit)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(session.user.id, storeName, itemName, price, unit || null);
+    const result = await pool.query(
+      `INSERT INTO grocery_prices (user_id, store_name, item_name, price, unit) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [session.user.id, storeName, itemName, price, unit || null]
+    );
 
-    return NextResponse.json({ 
-      success: true, 
-      id: result.lastInsertRowid 
-    }, { status: 201 });
+    return NextResponse.json({ success: true, id: result.rows[0].id }, { status: 201 });
   } catch (error) {
     console.error('Add price error:', error);
     return NextResponse.json({ error: 'Failed to add price' }, { status: 500 });
@@ -81,8 +76,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Price ID is required' }, { status: 400 });
     }
 
-    db.prepare('DELETE FROM grocery_prices WHERE id = ? AND user_id = ?').run(id, session.user.id);
-
+    await pool.query('DELETE FROM grocery_prices WHERE id = $1 AND user_id = $2', [id, session.user.id]);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Delete price error:', error);

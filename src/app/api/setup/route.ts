@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import db from '@/lib/db';
+import pool from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,8 +22,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user already exists
-    const existingUser = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
-    if (existingUser) {
+    const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+    if (existing.rows.length > 0) {
       return NextResponse.json(
         { error: 'Username already exists' },
         { status: 409 }
@@ -32,13 +32,17 @@ export async function POST(request: NextRequest) {
 
     // Hash password and create user
     const hashedPassword = await bcrypt.hash(password, 10);
-    const result = db.prepare('INSERT INTO users (username, password) VALUES (?, ?)').run(username, hashedPassword);
+    const result = await pool.query(
+      'INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id',
+      [username, hashedPassword]
+    );
 
     // Create default diet preferences
-    db.prepare(`
-      INSERT INTO diet_preferences (user_id, diet_type, daily_calorie_target, daily_carb_limit, budget_weekly, health_conditions)
-      VALUES (?, 'low-carb-paleo', 1400, 50, 120, 'GPA disease')
-    `).run(result.lastInsertRowid);
+    await pool.query(
+      `INSERT INTO diet_preferences (user_id, diet_type, daily_calorie_target, daily_carb_limit, budget_weekly, health_conditions)
+       VALUES ($1, 'low-carb-paleo', 1400, 50, 120, 'GPA disease')`,
+      [result.rows[0].id]
+    );
 
     return NextResponse.json(
       { success: true, message: 'Account created successfully' },
@@ -54,6 +58,6 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET() {
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-  return NextResponse.json({ hasUsers: userCount.count > 0 });
+  const result = await pool.query('SELECT COUNT(*) as count FROM users');
+  return NextResponse.json({ hasUsers: parseInt(result.rows[0].count) > 0 });
 }
