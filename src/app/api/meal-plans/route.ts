@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route';
+import { authOptions } from '@/lib/auth';
 import OpenAI from 'openai';
 import pool from '@/lib/db';
 
@@ -24,7 +24,8 @@ export async function POST(request: NextRequest) {
     const { budget, weekStartDate, preferences } = body;
 
     // Get user's diet preferences
-    const dietPrefs = db.prepare('SELECT * FROM diet_preferences WHERE user_id = ?').get(session.user.id) as any;
+    const dietResult = await pool.query('SELECT * FROM diet_preferences WHERE user_id = $1', [session.user.id]);
+    const dietPrefs = dietResult.rows[0];
 
     const healthContext = dietPrefs?.health_conditions 
       ? `IMPORTANT HEALTH CONSIDERATION: User has ${dietPrefs.health_conditions}. Avoid foods that may interfere with immunosuppressant medications or increase inflammation. Focus on anti-inflammatory foods, limit high-sodium items, and ensure adequate calcium and vitamin D sources.`
