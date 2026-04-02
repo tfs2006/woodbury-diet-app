@@ -4,14 +4,16 @@ import { authOptions } from '@/lib/auth';
 import OpenAI from 'openai';
 import pool from '@/lib/db';
 
-const openai = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    'HTTP-Referer': process.env.VERCEL_URL || 'http://localhost:3000',
-    'X-Title': 'Woodbury Diet App',
-  },
-});
+function getOpenAIClient() {
+  return new OpenAI({
+    baseURL: 'https://openrouter.ai/api/v1',
+    apiKey: process.env.OPENROUTER_API_KEY,
+    defaultHeaders: {
+      'HTTP-Referer': process.env.VERCEL_URL || 'http://localhost:3000',
+      'X-Title': 'Woodbury Diet App',
+    },
+  });
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -78,6 +80,7 @@ Please respond with ONLY valid JSON in this exact format:
   "treatSuggestions": ["Low-carb paleo-friendly treats for occasional enjoyment"]
 }`;
 
+    const openai = getOpenAIClient();
     const completion = await openai.chat.completions.create({
       model: 'qwen/qwen3.6-plus:free',
       messages: [
