@@ -4,6 +4,15 @@ import { authOptions } from '@/lib/auth';
 import OpenAI from 'openai';
 import pool from '@/lib/db';
 
+type OpenRouterErrorShape = {
+  status?: number;
+  message?: string;
+  error?: {
+    message?: string;
+    code?: number | string;
+  };
+};
+
 function getAppBaseUrl() {
   const rawUrl =
     process.env.NEXTAUTH_URL?.trim() ||
@@ -67,6 +76,47 @@ function isValidMealPlanResponse(payload: unknown): payload is {
   };
 
   return Array.isArray(candidate.mealPlan?.days) && !!candidate.groceryList;
+}
+
+function getMealPlanErrorResponse(error: unknown) {
+  const candidate = error as OpenRouterErrorShape;
+  const status = candidate?.status;
+  const providerMessage = candidate?.error?.message || candidate?.message || '';
+  const normalizedMessage = providerMessage.toLowerCase();
+
+  if (providerMessage === 'OPENROUTER_API_KEY is not configured') {
+    return {
+      error: 'Meal plan generation is not configured on the server.',
+      status: 500,
+    };
+  }
+
+  if (status === 401 || normalizedMessage.includes('user not found') || normalizedMessage.includes('invalid api key')) {
+    return {
+      error: 'The OpenRouter API key configured on the server is invalid. Replace OPENROUTER_API_KEY in Vercel.',
+      status: 500,
+    };
+  }
+
+  if (status === 429) {
+    return {
+      error: 'The meal plan service is rate-limited right now. Please try again in a few minutes.',
+      status: 429,
+    };
+  }
+
+  if (status === 400 || normalizedMessage.includes('model')) {
+    return {
+      error: 'The configured OpenRouter model request was rejected. Verify the model name and provider support.',
+      status: 500,
+    };
+  }
+
+  return {
+    error: 'Failed to generate meal plan',
+    status: 500,
+    details: process.env.NODE_ENV !== 'production' ? providerMessage || 'Unknown meal plan provider error' : undefined,
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -186,18 +236,7 @@ Please respond with ONLY valid JSON in this exact format:
     return NextResponse.json(parsedResponse);
   } catch (error) {
     console.error('Meal plan generation error:', error);
-
-    const message = error instanceof Error ? error.message : 'Failed to generate meal plan';
-    if (message === 'OPENROUTER_API_KEY is not configured') {
-      return NextResponse.json(
-        { error: 'Meal plan generation is not configured on the server.' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json(
-      { error: 'Failed to generate meal plan', details: process.env.NODE_ENV !== 'production' ? message : undefined },
-      { status: 500 }
-    );
+    const response = getMealPlanErrorResponse(error);
+    return NextResponse.json(response, { status: response.status });
   }
 }
