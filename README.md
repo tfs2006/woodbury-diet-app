@@ -90,6 +90,11 @@ The app is configured with:
 2. Go to [vercel.com](https://vercel.com)
 3. Import your repository
 4. Add environment variables:
+   - `DB_HOST`
+   - `DB_PORT`
+   - `DB_NAME`
+   - `DB_USER`
+   - `DB_PASSWORD`
    - `OPENROUTER_API_KEY`
    - `NEXTAUTH_SECRET` (generate a new one for production)
    - `NEXTAUTH_URL` (your production URL)

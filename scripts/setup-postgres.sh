@@ -1,26 +1,46 @@
 #!/bin/bash
-# Setup PostgreSQL for Woodbury Diet App
+# Setup PostgreSQL for Woodbury Diet App without hardcoding credentials.
 
-# Create user and database
+set -euo pipefail
+
+DB_USER="${DB_USER:-woodbury}"
+DB_NAME="${DB_NAME:-woodbury_diet}"
+ALLOWED_CIDR="${ALLOWED_CIDR:-}"
+
+if [ -z "${DB_PASSWORD:-}" ]; then
+  echo "Set DB_PASSWORD before running this script."
+  exit 1
+fi
+
+if [ -z "$ALLOWED_CIDR" ]; then
+  echo "Set ALLOWED_CIDR to the trusted network range that should reach PostgreSQL."
+  exit 1
+fi
+
 sudo -u postgres psql <<EOF
-CREATE USER woodbury WITH PASSWORD 'WoodburyDiet2026!';
-CREATE DATABASE woodbury_diet OWNER woodbury;
-GRANT ALL PRIVILEGES ON DATABASE woodbury_diet TO woodbury;
-\c woodbury_diet
-GRANT ALL ON SCHEMA public TO woodbury;
+DO
+\$\$
+BEGIN
+	IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${DB_USER}') THEN
+		CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}';
+	ELSE
+		ALTER ROLE ${DB_USER} WITH LOGIN PASSWORD '${DB_PASSWORD}';
+	END IF;
+END
+\$\$;
+CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};
+GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};
 EOF
 
-# Configure PostgreSQL to listen on all interfaces
-sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/*/main/postgresql.conf
+sudo -u postgres psql -d "$DB_NAME" <<EOF
+GRANT ALL ON SCHEMA public TO ${DB_USER};
+EOF
 
-# Allow remote connections with password auth
-echo "host    all             all             0.0.0.0/0               md5" | sudo tee -a /etc/postgresql/*/main/pg_hba.conf
+sudo sed -i "s/^#\?listen_addresses\s*=.*/listen_addresses = '*'/" /etc/postgresql/*/main/postgresql.conf
 
-# Restart PostgreSQL
+echo "host    all             all             ${ALLOWED_CIDR}               md5" | sudo tee -a /etc/postgresql/*/main/pg_hba.conf >/dev/null
+
 sudo systemctl restart postgresql
 
-# Open firewall port
-sudo ufw allow 5432/tcp 2>/dev/null || sudo iptables -A INPUT -p tcp --dport 5432 -j ACCEPT
-
-echo "PostgreSQL setup complete!"
-echo "Connection string: postgresql://woodbury:WoodburyDiet2026!@$(curl -s ifconfig.me):5432/woodbury_diet"
+echo "PostgreSQL setup complete."
+echo "Use DB_HOST, DB_PORT, DB_NAME, DB_USER, and DB_PASSWORD as environment variables in your app."
