@@ -53,6 +53,7 @@ export default function Dashboard() {
   const [weekStart, setWeekStart] = useState(format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'));
   const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
   const [loading, setLoading] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
   const [groceryPrices, setGroceryPrices] = useState<GroceryPrice[]>([]);
   const [newPrice, setNewPrice] = useState({ storeName: '', itemName: '', price: '', unit: '' });
@@ -98,6 +99,8 @@ export default function Dashboard() {
 
   const generateMealPlan = async () => {
     setLoading(true);
+    setGenerationError(null);
+
     try {
       const res = await fetch('/api/meal-plans', {
         method: 'POST',
@@ -110,11 +113,11 @@ export default function Dashboard() {
         setMealPlan(data);
         setActiveTab('grocery-list');
       } else {
-        alert(data.error || 'Failed to generate meal plan');
+        setGenerationError(data.error || data.details || 'Failed to generate meal plan');
       }
     } catch (error) {
       console.error('Failed to generate meal plan:', error);
-      alert('An error occurred. Check console for details.');
+      setGenerationError('An unexpected error occurred while generating your meal plan.');
     } finally {
       setLoading(false);
     }
@@ -309,6 +312,11 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="mt-3 text-sm text-gray-500">AI-powered meal plans consider your low-carb paleo diet, GPA disease, and budget. Includes treat suggestions!</p>
+              {generationError && (
+                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {generationError}
+                </div>
+              )}
             </div>
             {mealPlan && (
               <div className="bg-white rounded-xl shadow-sm p-6 border border-emerald-100">

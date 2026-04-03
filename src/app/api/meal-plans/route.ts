@@ -4,15 +4,67 @@ import { authOptions } from '@/lib/auth';
 import OpenAI from 'openai';
 import pool from '@/lib/db';
 
+function getAppBaseUrl() {
+  const rawUrl =
+    process.env.NEXTAUTH_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL ||
+    'http://localhost:3000';
+
+  if (/^https?:\/\//i.test(rawUrl)) {
+    return rawUrl;
+  }
+
+  return `https://${rawUrl}`;
+}
+
 function getOpenAIClient() {
+  if (!process.env.OPENROUTER_API_KEY) {
+    throw new Error('OPENROUTER_API_KEY is not configured');
+  }
+
   return new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
     apiKey: process.env.OPENROUTER_API_KEY,
     defaultHeaders: {
-      'HTTP-Referer': process.env.VERCEL_URL || 'http://localhost:3000',
+      'HTTP-Referer': getAppBaseUrl(),
       'X-Title': 'Woodbury Diet App',
     },
   });
+}
+
+function extractJsonResponse(responseContent: string) {
+  const fencedMatch = responseContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const firstBrace = responseContent.indexOf('{');
+  const lastBrace = responseContent.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+    return responseContent.slice(firstBrace, lastBrace + 1);
+  }
+
+  return responseContent.trim();
+}
+
+function isValidMealPlanResponse(payload: unknown): payload is {
+  mealPlan: { days: unknown[] };
+  groceryList: Record<string, unknown[]>;
+  totalEstimatedCost?: number;
+  prepTips?: string[];
+  treatSuggestions?: string[];
+} {
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  const candidate = payload as {
+    mealPlan?: { days?: unknown[] };
+    groceryList?: Record<string, unknown[]>;
+  };
+
+  return Array.isArray(candidate.mealPlan?.days) && !!candidate.groceryList;
 }
 
 export async function POST(request: NextRequest) {
@@ -24,6 +76,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { budget, weekStartDate, preferences } = body;
+    const parsedBudget = typeof budget === 'number' ? budget : Number(budget);
+    const normalizedBudget = Number.isFinite(parsedBudget) && parsedBudget > 0 ? parsedBudget : 120;
+    const normalizedWeekStartDate =
+      typeof weekStartDate === 'string' && weekStartDate.trim().length > 0
+        ? weekStartDate
+        : new Date().toISOString().slice(0, 10);
 
     // Get user's diet preferences
     const dietResult = await pool.query('SELECT * FROM diet_preferences WHERE user_id = $1', [session.user.id]);
@@ -39,8 +97,8 @@ DIET REQUIREMENTS:
 - Low-carb paleo (<50g net carbs per person per day)
 - High protein to preserve muscle
 - Anti-inflammatory focus (GPA disease considerations)
-- Budget: $${budget || 120} per week for two people
-- Week starting: ${weekStartDate || 'Next Monday'}
+- Budget: $${normalizedBudget} per week for two people
+- Week starting: ${normalizedWeekStartDate}
 
 ${healthContext}
 
@@ -91,6 +149,7 @@ Please respond with ONLY valid JSON in this exact format:
         { role: 'user', content: prompt },
       ],
       temperature: 0.7,
+      response_format: { type: 'json_object' },
     });
 
     const responseContent = completion.choices[0]?.message?.content || '';
@@ -99,16 +158,19 @@ Please respond with ONLY valid JSON in this exact format:
     // Parse the JSON response
     let parsedResponse;
     try {
-      // Extract JSON from potential markdown code blocks
-      const jsonMatch = responseContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || responseContent.match(/\{[\s\S]*\}/);
-      const jsonString = jsonMatch ? jsonMatch[1] || jsonMatch[0] : responseContent;
+      const jsonString = extractJsonResponse(responseContent);
       parsedResponse = JSON.parse(jsonString);
+
+      if (!isValidMealPlanResponse(parsedResponse)) {
+        throw new Error('AI response did not match the expected meal plan shape');
+      }
+
       console.log('Parsed response keys:', Object.keys(parsedResponse));
     } catch (parseError) {
       console.error('Failed to parse AI response:', parseError);
       console.error('Raw content:', responseContent);
       return NextResponse.json(
-        { error: 'Failed to generate valid meal plan. Please try again.' },
+        { error: 'Meal plan service returned an invalid response. Please try again.' },
         { status: 500 }
       );
     }
@@ -116,14 +178,23 @@ Please respond with ONLY valid JSON in this exact format:
     // Save meal plan to database
     await pool.query(
       `INSERT INTO meal_plans (user_id, week_start_date, plan_data, budget) VALUES ($1, $2, $3, $4)`,
-      [session.user.id, weekStartDate || new Date().toISOString(), JSON.stringify(parsedResponse), budget || 120]
+      [session.user.id, normalizedWeekStartDate, JSON.stringify(parsedResponse), normalizedBudget]
     );
 
     return NextResponse.json(parsedResponse);
   } catch (error) {
     console.error('Meal plan generation error:', error);
+
+    const message = error instanceof Error ? error.message : 'Failed to generate meal plan';
+    if (message === 'OPENROUTER_API_KEY is not configured') {
+      return NextResponse.json(
+        { error: 'Meal plan generation is not configured on the server.' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
-      { error: 'Failed to generate meal plan' },
+      { error: 'Failed to generate meal plan', details: process.env.NODE_ENV !== 'production' ? message : undefined },
       { status: 500 }
     );
   }
