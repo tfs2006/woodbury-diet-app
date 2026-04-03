@@ -31,9 +31,16 @@ function getGenerationStatus(elapsedSeconds: number) {
     };
   }
 
+  if (elapsedSeconds < 45) {
+    return {
+      title: 'Finalizing weekly plan',
+      description: 'The model is filling out all 7 days and pricing details.',
+    };
+  }
+
   return {
     title: 'Still generating',
-    description: 'The provider is taking longer than usual, but the request is still active.',
+    description: 'This full weekly plan can take around 60-90 seconds. The request is still active.',
   };
 }
 
@@ -150,7 +157,7 @@ export default function Dashboard() {
     setGenerationError(null);
     setGenerationStartedAt(Date.now());
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 60000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 105000);
 
     try {
       const res = await fetch('/api/meal-plans', {
@@ -170,7 +177,7 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Failed to generate meal plan:', error);
       if (error instanceof Error && error.name === 'AbortError') {
-        setGenerationError('Meal plan generation timed out. The current AI model is responding too slowly. Please try again.');
+        setGenerationError('Meal plan generation timed out after waiting for the AI response. Please try again.');
       } else {
         setGenerationError('An unexpected error occurred while generating your meal plan.');
       }
@@ -392,7 +399,7 @@ export default function Dashboard() {
                       style={{ width: `${generationProgress}%` }}
                     />
                   </div>
-                  <p className="mt-2 text-xs text-emerald-700">Using {MEAL_PLAN_MODEL_LABEL} via OpenRouter. Most successful requests should finish quickly.</p>
+                  <p className="mt-2 text-xs text-emerald-700">Using {MEAL_PLAN_MODEL_LABEL} via OpenRouter. Full 7-day plans may take around a minute or more.</p>
                 </div>
               )}
               {generationError && (

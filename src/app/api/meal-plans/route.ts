@@ -5,7 +5,7 @@ import OpenAI from 'openai';
 import pool from '@/lib/db';
 
 const DEFAULT_MEAL_PLAN_MODEL = 'openai/gpt-5-nano';
-const DEFAULT_MEAL_PLAN_TIMEOUT_MS = 45000;
+const DEFAULT_MEAL_PLAN_TIMEOUT_MS = 90000;
 
 type OpenRouterErrorShape = {
   status?: number;
