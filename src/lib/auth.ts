@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import pool from '@/lib/db';
 
 export const authOptions: NextAuthOptions = {
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: process.env.NEXTAUTH_SECRET?.trim(),
   providers: [
     CredentialsProvider({
       name: 'Credentials',

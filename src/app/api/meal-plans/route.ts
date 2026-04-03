@@ -6,9 +6,9 @@ import pool from '@/lib/db';
 
 function getAppBaseUrl() {
   const rawUrl =
-    process.env.NEXTAUTH_URL ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    process.env.VERCEL_URL ||
+    process.env.NEXTAUTH_URL?.trim() ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
+    process.env.VERCEL_URL?.trim() ||
     'http://localhost:3000';
 
   if (/^https?:\/\//i.test(rawUrl)) {
@@ -19,13 +19,15 @@ function getAppBaseUrl() {
 }
 
 function getOpenAIClient() {
-  if (!process.env.OPENROUTER_API_KEY) {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+
+  if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is not configured');
   }
 
   return new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
-    apiKey: process.env.OPENROUTER_API_KEY,
+    apiKey,
     defaultHeaders: {
       'HTTP-Referer': getAppBaseUrl(),
       'X-Title': 'Woodbury Diet App',
