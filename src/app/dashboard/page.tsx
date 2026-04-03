@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { Calendar, ShoppingCart, DollarSign, Settings, LogOut, Plus, ChevronDown, ChevronUp, Heart, LoaderCircle } from 'lucide-react';
 import { format, startOfWeek } from 'date-fns';
 
-const MEAL_PLAN_MODEL_LABEL = 'openai/gpt-5-nano';
+const MEAL_PLAN_MODEL_LABEL = 'openai/gpt-4.1-nano';
 
 function getGenerationStatus(elapsedSeconds: number) {
   if (elapsedSeconds < 4) {

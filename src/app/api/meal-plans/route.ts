@@ -4,7 +4,9 @@ import { authOptions } from '@/lib/auth';
 import OpenAI from 'openai';
 import pool from '@/lib/db';
 
-const DEFAULT_MEAL_PLAN_MODEL = 'openai/gpt-5-nano';
+export const maxDuration = 120;
+
+const DEFAULT_MEAL_PLAN_MODEL = 'openai/gpt-4.1-nano';
 const DEFAULT_MEAL_PLAN_TIMEOUT_MS = 90000;
 
 type OpenRouterErrorShape = {
