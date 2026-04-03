@@ -100,11 +100,14 @@ export default function Dashboard() {
   const generateMealPlan = async () => {
     setLoading(true);
     setGenerationError(null);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 60000);
 
     try {
       const res = await fetch('/api/meal-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({ budget: parseFloat(budget), weekStartDate: weekStart }),
       });
       const data = await res.json();
@@ -117,8 +120,13 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Failed to generate meal plan:', error);
-      setGenerationError('An unexpected error occurred while generating your meal plan.');
+      if (error instanceof Error && error.name === 'AbortError') {
+        setGenerationError('Meal plan generation timed out. The current AI model is responding too slowly. Please try again.');
+      } else {
+        setGenerationError('An unexpected error occurred while generating your meal plan.');
+      }
     } finally {
+      window.clearTimeout(timeoutId);
       setLoading(false);
     }
   };

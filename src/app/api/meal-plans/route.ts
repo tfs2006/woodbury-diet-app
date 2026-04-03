@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import OpenAI from 'openai';
 import pool from '@/lib/db';
 
+const DEFAULT_MEAL_PLAN_TIMEOUT_MS = 45000;
+
 type OpenRouterErrorShape = {
   status?: number;
   message?: string;
@@ -42,6 +44,13 @@ function getOpenAIClient() {
       'X-Title': 'Woodbury Diet App',
     },
   });
+}
+
+function getMealPlanTimeoutMs() {
+  const parsedTimeout = Number(process.env.OPENROUTER_TIMEOUT_MS?.trim());
+  return Number.isFinite(parsedTimeout) && parsedTimeout > 0
+    ? parsedTimeout
+    : DEFAULT_MEAL_PLAN_TIMEOUT_MS;
 }
 
 function extractJsonResponse(responseContent: string) {
@@ -102,6 +111,13 @@ function getMealPlanErrorResponse(error: unknown) {
     return {
       error: 'The meal plan service is rate-limited right now. Please try again in a few minutes.',
       status: 429,
+    };
+  }
+
+  if (normalizedMessage.includes('timed out')) {
+    return {
+      error: 'Meal plan generation timed out. The current OpenRouter model is responding too slowly. Please try again.',
+      status: 504,
     };
   }
 
@@ -191,18 +207,23 @@ Please respond with ONLY valid JSON in this exact format:
 }`;
 
     const openai = getOpenAIClient();
-    const completion = await openai.chat.completions.create({
-      model: 'qwen/qwen3.6-plus:free',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a nutritionist and meal planning expert specializing in low-carb paleo diets. You create practical, budget-friendly meal plans with clear grocery lists. Always respond with valid JSON only.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.7,
-      response_format: { type: 'json_object' },
-    });
+    const completion = await Promise.race([
+      openai.chat.completions.create({
+        model: 'qwen/qwen3.6-plus:free',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a nutritionist and meal planning expert specializing in low-carb paleo diets. You create practical, budget-friendly meal plans with clear grocery lists. Always respond with valid JSON only.',
+          },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+        response_format: { type: 'json_object' },
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Meal plan request timed out')), getMealPlanTimeoutMs());
+      }),
+    ]);
 
     const responseContent = completion.choices[0]?.message?.content || '';
     console.log('Raw AI response:', responseContent.substring(0, 500));
