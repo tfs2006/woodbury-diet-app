@@ -4,8 +4,38 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Calendar, ShoppingCart, DollarSign, Settings, LogOut, Plus, ChevronDown, ChevronUp, Heart } from 'lucide-react';
+import { Calendar, ShoppingCart, DollarSign, Settings, LogOut, Plus, ChevronDown, ChevronUp, Heart, LoaderCircle } from 'lucide-react';
 import { format, startOfWeek } from 'date-fns';
+
+const MEAL_PLAN_MODEL_LABEL = 'openai/gpt-5-nano';
+
+function getGenerationStatus(elapsedSeconds: number) {
+  if (elapsedSeconds < 4) {
+    return {
+      title: 'Starting request',
+      description: 'Sending your budget and diet preferences to the AI model.',
+    };
+  }
+
+  if (elapsedSeconds < 10) {
+    return {
+      title: 'Drafting meals',
+      description: 'Building breakfasts, lunches, and dinners for the week.',
+    };
+  }
+
+  if (elapsedSeconds < 18) {
+    return {
+      title: 'Assembling grocery list',
+      description: 'Estimating ingredients, prep tips, and total cost.',
+    };
+  }
+
+  return {
+    title: 'Still generating',
+    description: 'The provider is taking longer than usual, but the request is still active.',
+  };
+}
 
 interface MealPlan {
   mealPlan: {
@@ -54,6 +84,8 @@ export default function Dashboard() {
   const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generationStartedAt, setGenerationStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
   const [groceryPrices, setGroceryPrices] = useState<GroceryPrice[]>([]);
   const [newPrice, setNewPrice] = useState({ storeName: '', itemName: '', price: '', unit: '' });
@@ -70,6 +102,22 @@ export default function Dashboard() {
     fetchPrices();
     fetchDeals();
   }, [status, router]);
+
+  useEffect(() => {
+    if (!loading || generationStartedAt === null) {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const updateElapsed = () => {
+      setElapsedSeconds(Math.floor((Date.now() - generationStartedAt) / 1000));
+    };
+
+    updateElapsed();
+    const intervalId = window.setInterval(updateElapsed, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loading, generationStartedAt]);
 
   const fetchDeals = async () => {
     try {
@@ -100,6 +148,7 @@ export default function Dashboard() {
   const generateMealPlan = async () => {
     setLoading(true);
     setGenerationError(null);
+    setGenerationStartedAt(Date.now());
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 60000);
 
@@ -127,6 +176,7 @@ export default function Dashboard() {
       }
     } finally {
       window.clearTimeout(timeoutId);
+      setGenerationStartedAt(null);
       setLoading(false);
     }
   };
@@ -255,6 +305,8 @@ export default function Dashboard() {
   };
 
   const getUniqueStores = () => Array.from(new Set(groceryPrices.map(p => p.store_name)));
+  const generationStatus = getGenerationStatus(elapsedSeconds);
+  const generationProgress = loading ? Math.min(92, 15 + elapsedSeconds * 6) : 0;
 
   if (status === 'loading') {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
@@ -304,12 +356,12 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Weekly Budget ($)</label>
-                  <input type="number" value={budget} onChange={(e) => setBudget(e.target.value)}
+                  <input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} disabled={loading}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Week Starting</label>
-                  <input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)}
+                  <input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} disabled={loading}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" />
                 </div>
                 <div className="flex items-end">
@@ -319,7 +371,30 @@ export default function Dashboard() {
                   </button>
                 </div>
               </div>
-              <p className="mt-3 text-sm text-gray-500">AI-powered meal plans consider your low-carb paleo diet, GPA disease, and budget. Includes treat suggestions!</p>
+              <p className="mt-3 text-sm text-gray-500">AI-powered meal plans consider your low-carb paleo diet, GPA disease, and budget. Includes treat suggestions. Current model: {MEAL_PLAN_MODEL_LABEL}.</p>
+              {loading && (
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <LoaderCircle className="mt-0.5 h-5 w-5 animate-spin text-emerald-600" />
+                      <div>
+                        <p className="text-sm font-semibold text-emerald-900">{generationStatus.title}</p>
+                        <p className="text-sm text-emerald-700">{generationStatus.description}</p>
+                      </div>
+                    </div>
+                    <div className="rounded-full bg-white px-3 py-1 text-sm font-medium text-emerald-700 shadow-sm">
+                      {elapsedSeconds}s
+                    </div>
+                  </div>
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-emerald-100">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-700"
+                      style={{ width: `${generationProgress}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-emerald-700">Using {MEAL_PLAN_MODEL_LABEL} via OpenRouter. Most successful requests should finish quickly.</p>
+                </div>
+              )}
               {generationError && (
                 <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                   {generationError}

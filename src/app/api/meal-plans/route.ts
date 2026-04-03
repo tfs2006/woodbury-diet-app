@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import OpenAI from 'openai';
 import pool from '@/lib/db';
 
+const DEFAULT_MEAL_PLAN_MODEL = 'openai/gpt-5-nano';
 const DEFAULT_MEAL_PLAN_TIMEOUT_MS = 45000;
 
 type OpenRouterErrorShape = {
@@ -51,6 +52,10 @@ function getMealPlanTimeoutMs() {
   return Number.isFinite(parsedTimeout) && parsedTimeout > 0
     ? parsedTimeout
     : DEFAULT_MEAL_PLAN_TIMEOUT_MS;
+}
+
+function getMealPlanModel() {
+  return process.env.OPENROUTER_MEAL_PLAN_MODEL?.trim() || DEFAULT_MEAL_PLAN_MODEL;
 }
 
 function extractJsonResponse(responseContent: string) {
@@ -207,9 +212,10 @@ Please respond with ONLY valid JSON in this exact format:
 }`;
 
     const openai = getOpenAIClient();
+    const mealPlanModel = getMealPlanModel();
     const completion = await Promise.race([
       openai.chat.completions.create({
-        model: 'qwen/qwen3.6-plus:free',
+        model: mealPlanModel,
         messages: [
           {
             role: 'system',
